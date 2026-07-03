@@ -109,6 +109,19 @@
     min-height: .7rem;
     color: var(--muted);
   }
+  .timer-btn .note {
+    max-width: 100%;
+    font-size: .72rem;
+    line-height: 1.1;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 6px;
+  }
+  .timer-btn.running .note,
+  .timer-btn.paused .note { color: var(--text); opacity: .85; }
+  .timer-btn.expired .note { color: inherit; }
   .timer-btn .dot {
     position: absolute;
     top: 10px;
@@ -185,8 +198,32 @@
     max-width: 360px;
     padding: 20px;
     box-shadow: 0 12px 40px rgba(0, 0, 0, .5);
+    max-height: calc(100dvh - 40px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
-  .modal h2 { margin: 0 0 14px; font-size: 1.05rem; font-weight: 700; }
+  .modal h2 { margin: 0 0 16px; font-size: 1.05rem; font-weight: 700; }
+  .mlabel {
+    display: block;
+    font-size: .74rem;
+    font-weight: 600;
+    letter-spacing: .3px;
+    color: var(--muted);
+    margin: 0 0 7px;
+  }
+  .text-input {
+    width: 100%;
+    font-size: 1rem;
+    padding: 11px 12px;
+    margin-bottom: 16px;
+    border-radius: 12px;
+    border: 1.5px solid var(--border);
+    background: var(--card-2);
+    color: var(--text);
+    font-family: inherit;
+  }
+  .text-input:focus,
+  .field input:focus { outline: none; border-color: var(--accent-default); }
 
   .swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 16px; }
   .swatch {
@@ -272,17 +309,36 @@
     </svg>
   </button>
 
-  <!-- Modale colore -->
-  <div class="overlay" id="colorOverlay" role="dialog" aria-modal="true" aria-labelledby="colorTitle">
+  <!-- Modale pulsante: nota, durata (una volta), colore -->
+  <div class="overlay" id="btnOverlay" role="dialog" aria-modal="true" aria-labelledby="btnTitle">
     <div class="modal">
-      <h2 id="colorTitle">Colore pulsante</h2>
+      <h2 id="btnTitle">Pulsante</h2>
+
+      <label class="mlabel" for="noteInput">Nota</label>
+      <input type="text" id="noteInput" class="text-input" maxlength="40" placeholder="Es. Pasta, Tè, Colata…" autocomplete="off">
+
+      <label class="mlabel">Durata (solo per questa volta)</label>
+      <div class="field-row">
+        <div class="field">
+          <label for="bMin">Minuti</label>
+          <input type="number" id="bMin" inputmode="numeric" min="0" max="999" step="1">
+        </div>
+        <div class="field">
+          <label for="bSec">Secondi</label>
+          <input type="number" id="bSec" inputmode="numeric" min="0" max="59" step="1">
+        </div>
+      </div>
+
+      <label class="mlabel">Colore</label>
       <div class="swatches" id="swatches"></div>
       <label class="custom-row">
         Personalizzato
         <input type="color" id="customColor" aria-label="Colore personalizzato">
       </label>
+
       <div class="modal-actions">
-        <button class="btn" type="button" id="colorClose">Chiudi</button>
+        <button class="btn" type="button" id="btnCancel">Annulla</button>
+        <button class="btn primary" type="button" id="btnSave">Salva</button>
       </div>
     </div>
   </div>
@@ -325,6 +381,7 @@
                    "#ec4899", "#ef4444", "#f59e0b", "#eab308", "#84cc16", "#94a3b8"];
     var LS_DURATION = "saltapp.durationMs";
     var LS_ACCENTS  = "saltapp.accents";
+    var LS_NOTES    = "saltapp.notes";
 
     /* ---------- Storage (con guardie) ---------- */
     function lsGet(key) { try { return window.localStorage.getItem(key); } catch (e) { return null; } }
@@ -348,6 +405,20 @@
     })();
 
     function saveAccents() { lsSet(LS_ACCENTS, JSON.stringify(accents)); }
+
+    var notes = (function () {
+      var out = [];
+      var i;
+      try {
+        var saved = JSON.parse(lsGet(LS_NOTES) || "[]");
+        for (i = 0; i < COUNT; i++) out[i] = (typeof saved[i] === "string") ? saved[i] : "";
+      } catch (e) {
+        for (i = 0; i < COUNT; i++) out[i] = "";
+      }
+      return out;
+    })();
+
+    function saveNotes() { lsSet(LS_NOTES, JSON.stringify(notes)); }
 
     /* ---------- DOM ---------- */
     var grid = document.getElementById("grid");
@@ -456,7 +527,7 @@
 
     /* ---------- Transizioni ---------- */
     function start(s) {
-      s.remainingMs = DURATION_MS;
+      s.remainingMs = (s.overrideMs != null ? s.overrideMs : DURATION_MS);
       s.endTime = Date.now() + s.remainingMs;
       s.status = "running";
       render(s); ensureTicking(); requestWakeLock(); vibrate(15);
@@ -475,7 +546,7 @@
       render(s); startAlarm(s); requestWakeLock();
     }
     function reset(s) {
-      s.status = "idle"; s.remainingMs = DURATION_MS; s.endTime = null;
+      s.status = "idle"; s.overrideMs = null; s.remainingMs = DURATION_MS; s.endTime = null;
       clearAlarmForButton(s); render(s); maybeReleaseWakeLock();
     }
 
@@ -503,15 +574,23 @@
 
     /* ---------- Render ---------- */
     function updateReadout(s) {
-      s.readoutEl.textContent = fmt(s.status === "idle" ? DURATION_MS : s.remainingMs);
+      var base = (s.overrideMs != null ? s.overrideMs : DURATION_MS);
+      s.readoutEl.textContent = fmt(s.status === "idle" ? base : s.remainingMs);
     }
     function render(s) {
       var el = s.el;
       el.classList.remove("idle", "running", "paused", "expired");
       el.classList.add(s.status);
-      s.badgeEl.textContent = BADGE[s.status];
+
+      if (s.note) { s.noteEl.textContent = s.note; s.noteEl.title = s.note; s.noteEl.hidden = false; }
+      else { s.noteEl.textContent = ""; s.noteEl.removeAttribute("title"); s.noteEl.hidden = true; }
+
+      var badge = BADGE[s.status];
+      if (s.status === "idle" && s.overrideMs != null) badge = "1 VOLTA";
+      s.badgeEl.textContent = badge;
+
       updateReadout(s);
-      el.setAttribute("aria-label", "Pulsante " + s.n + ", " + A11Y[s.status]);
+      el.setAttribute("aria-label", "Pulsante " + s.n + (s.note ? " " + s.note : "") + ", " + A11Y[s.status]);
     }
     function applyAccent(s, color) {
       s.accent = color;
@@ -535,7 +614,7 @@
           s.longPressed = true;
           if (s.pendingTapTimer != null) { clearTimeout(s.pendingTapTimer); s.pendingTapTimer = null; }
           vibrate(35);
-          openColorModal(s);
+          openButtonModal(s);
         }, LONG_PRESS_MS);
       });
       el.addEventListener("pointermove", function (e) {
@@ -568,7 +647,7 @@
       });
       el.addEventListener("keydown", function (e) {
         if (e.key === "Backspace" || e.key === "Delete") { e.preventDefault(); reset(s); }
-        else if (e.key === "c" || e.key === "C") { e.preventDefault(); openColorModal(s); }
+        else if (e.key === "c" || e.key === "C") { e.preventDefault(); openButtonModal(s); }
       });
     }
 
@@ -581,16 +660,18 @@
 
       var dot = document.createElement("span"); dot.className = "dot";
       var num = document.createElement("span"); num.className = "num"; num.textContent = n;
+      var note = document.createElement("span"); note.className = "note"; note.hidden = true;
       var readout = document.createElement("span"); readout.className = "readout"; readout.textContent = fmt(DURATION_MS);
       var badge = document.createElement("span"); badge.className = "badge";
 
-      el.appendChild(dot); el.appendChild(num); el.appendChild(readout); el.appendChild(badge);
+      el.appendChild(dot); el.appendChild(num); el.appendChild(note); el.appendChild(readout); el.appendChild(badge);
       grid.appendChild(el);
 
       var s = {
-        n: n, el: el, readoutEl: readout, badgeEl: badge,
+        n: n, el: el, noteEl: note, readoutEl: readout, badgeEl: badge,
         accent: accents[n - 1] || DEFAULT_ACCENT,
-        status: "idle", remainingMs: DURATION_MS, endTime: null,
+        note: notes[n - 1] || "",
+        status: "idle", remainingMs: DURATION_MS, endTime: null, overrideMs: null,
         longTimer: null, pendingTapTimer: null, longPressed: false,
         pointerDown: false, pointerId: null, moved: false, downX: 0, downY: 0,
         lastPointerTs: 0
@@ -601,12 +682,16 @@
     }
     for (var i = 1; i <= COUNT; i++) makeButton(i);
 
-    /* ---------- Modale colore ---------- */
-    var colorOverlay = document.getElementById("colorOverlay");
-    var colorTitle = document.getElementById("colorTitle");
+    /* ---------- Modale pulsante (nota + durata una-tantum + colore) ---------- */
+    var btnOverlay = document.getElementById("btnOverlay");
+    var btnTitle = document.getElementById("btnTitle");
     var swatchesEl = document.getElementById("swatches");
     var customColor = document.getElementById("customColor");
-    var currentColorBtn = null;
+    var noteInput = document.getElementById("noteInput");
+    var bMin = document.getElementById("bMin");
+    var bSec = document.getElementById("bSec");
+    var currentBtn = null;
+    var stagedColor = DEFAULT_ACCENT;   // colore scelto ma non ancora salvato
 
     (function buildSwatches() {
       PRESETS.forEach(function (c) {
@@ -616,7 +701,7 @@
         b.style.background = c;
         b.setAttribute("aria-label", "Colore " + c);
         b.dataset.color = c;
-        b.addEventListener("click", function () { chooseColor(c); });
+        b.addEventListener("click", function () { stageColor(c); });
         swatchesEl.appendChild(b);
       });
     })();
@@ -627,26 +712,54 @@
         nodes[k].classList.toggle("selected", nodes[k].dataset.color.toLowerCase() === String(color).toLowerCase());
       }
     }
-    function chooseColor(color) {
-      if (!currentColorBtn) return;
-      applyAccent(currentColorBtn, color);
-      saveAccents();
-      markSelectedSwatch(color);
-      customColor.value = normalizeHex(color);
-    }
     function normalizeHex(c) {
       // <input type=color> vuole #rrggbb; se non lo è, ripiega sul default
       return /^#[0-9a-fA-F]{6}$/.test(c) ? c : DEFAULT_ACCENT;
     }
-    function openColorModal(s) {
-      currentColorBtn = s;
-      colorTitle.textContent = "Colore pulsante " + s.n;
-      markSelectedSwatch(s.accent);
-      customColor.value = normalizeHex(s.accent);
-      openOverlay(colorOverlay);
+    function stageColor(color) {          // seleziona senza applicare (commit al Salva)
+      stagedColor = color;
+      markSelectedSwatch(color);
+      customColor.value = normalizeHex(color);
     }
-    customColor.addEventListener("input", function () { chooseColor(customColor.value); });
-    document.getElementById("colorClose").addEventListener("click", function () { closeOverlay(colorOverlay); });
+    customColor.addEventListener("input", function () { stageColor(customColor.value); });
+
+    function openButtonModal(s) {
+      currentBtn = s;
+      btnTitle.textContent = "Pulsante " + s.n;
+      noteInput.value = s.note || "";
+      var secs = Math.round((s.overrideMs != null ? s.overrideMs : DURATION_MS) / 1000);
+      bMin.value = Math.floor(secs / 60);
+      bSec.value = secs % 60;
+      stageColor(s.accent);
+      openOverlay(btnOverlay);
+    }
+    function saveButtonModal() {
+      if (!currentBtn) { closeOverlay(btnOverlay); return; }
+      var s = currentBtn;
+
+      // nota (persistente)
+      s.note = noteInput.value.trim();
+      notes[s.n - 1] = s.note;
+      saveNotes();
+
+      // colore (persistente)
+      applyAccent(s, stagedColor);
+      saveAccents();
+
+      // durata solo-per-questa-volta: override attivo solo se diverso dal default globale
+      var m = parseInt(bMin.value, 10); if (!isFinite(m) || m < 0) m = 0;
+      var sec = parseInt(bSec.value, 10); if (!isFinite(sec) || sec < 0) sec = 0;
+      if (sec > 59) sec = 59;
+      var totalSec = m * 60 + sec;
+      if (totalSec < 1) totalSec = 1;
+      var defaultSec = Math.round(DURATION_MS / 1000);
+      s.overrideMs = (totalSec !== defaultSec) ? totalSec * 1000 : null;
+
+      render(s);
+      closeOverlay(btnOverlay);
+    }
+    document.getElementById("btnSave").addEventListener("click", saveButtonModal);
+    document.getElementById("btnCancel").addEventListener("click", function () { closeOverlay(btnOverlay); });
 
     /* ---------- Modale impostazioni ---------- */
     var settingsOverlay = document.getElementById("settingsOverlay");
@@ -685,12 +798,12 @@
       ov.classList.remove("open");
       if (!document.querySelector(".overlay.open")) document.body.classList.remove("modal-open");
     }
-    [colorOverlay, settingsOverlay].forEach(function (ov) {
+    [btnOverlay, settingsOverlay].forEach(function (ov) {
       ov.addEventListener("click", function (e) { if (e.target === ov) closeOverlay(ov); }); // click sullo sfondo
       ov.addEventListener("contextmenu", function (e) { e.preventDefault(); });               // niente menù contestuale sul popup
     });
     document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape") { closeOverlay(colorOverlay); closeOverlay(settingsOverlay); }
+      if (e.key === "Escape") { closeOverlay(btnOverlay); closeOverlay(settingsOverlay); }
     });
 
     /* ---------- Ritorno in primo piano ---------- */
