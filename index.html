@@ -558,12 +558,27 @@
         case "expired": reset(s);  break;
       }
     }
+    function doubleTap(s) {
+      // Se il pulsante è già completamente resettato (idle, senza durata one-shot),
+      // il doppio tap azzera la nota; altrimenti azzera il timer / l'override.
+      if (s.status === "idle" && s.overrideMs == null) {
+        if (s.note) {
+          s.note = "";
+          notes[s.n - 1] = "";
+          saveNotes();
+          vibrate(20);
+          render(s);
+        }
+        return;
+      }
+      vibrate(20);
+      reset(s);
+    }
     function handleTap(s) {
-      if (s.pendingTapTimer != null) {          // secondo tocco -> doppio tap = azzera
+      if (s.pendingTapTimer != null) {          // secondo tocco -> doppio tap
         clearTimeout(s.pendingTapTimer);
         s.pendingTapTimer = null;
-        vibrate(20);
-        reset(s);
+        doubleTap(s);
       } else {                                  // primo tocco -> attendi eventuale secondo
         s.pendingTapTimer = setTimeout(function () {
           s.pendingTapTimer = null;

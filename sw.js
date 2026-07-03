@@ -1,6 +1,6 @@
 /* Service worker — app shell offline per il Timer PWA.
    Bump di CACHE a ogni modifica dei file per forzare l'aggiornamento. */
-const CACHE = "timer-pwa-v3";
+const CACHE = "timer-pwa-v4";
 
 /* Percorsi relativi alla posizione del service worker (radice dell'app). */
 const ASSETS = [
