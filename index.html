@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Timer</title>
+<style>
+  * { box-sizing: border-box; }
+  :root {
+    --bg: #0f1115;
+    --card: #1a1e27;
+    --card-2: #20252f;
+    --border: #2a2f3a;
+    --text: #e8eaf0;
+    --muted: #8890a0;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --accent-default: #22c55e;
+  }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+    min-height: 100dvh;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+    overscroll-behavior: none;
+  }
+  body.modal-open { overflow: hidden; }
+
+  header {
+    padding: 18px 16px 6px;
+    text-align: center;
+  }
+  header h1 { margin: 0; font-size: 1.15rem; font-weight: 700; letter-spacing: .2px; }
+  header p { margin: 6px 0 0; font-size: .78rem; line-height: 1.35; color: var(--muted); }
+
+  main.grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    padding: 12px 12px calc(96px + env(safe-area-inset-bottom));
+    align-content: start;
+    width: 100%;
+  }
+  @media (min-width: 560px) {
+    main.grid {
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      max-width: 760px;
+      margin: 0 auto;
+    }
+  }
+
+  .timer-btn {
+    position: relative;
+    appearance: none;
+    -webkit-appearance: none;
+    --accent: var(--accent-default);
+    border: 1.5px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    border-radius: 18px;
+    min-height: 108px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    font-family: inherit;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: transform .06s ease, background-color .2s ease, border-color .2s ease;
+    overflow: hidden;
+  }
+  .timer-btn:active { transform: scale(.97); }
+
+  .timer-btn .num { font-size: 2rem; font-weight: 800; line-height: 1; }
+  .timer-btn .readout {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+    font-size: 1.05rem;
+    letter-spacing: .5px;
+    color: var(--muted);
+  }
+  .timer-btn .badge {
+    font-size: .62rem;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    min-height: .7rem;
+    color: var(--muted);
+  }
+  .timer-btn .dot {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .timer-btn.idle .readout { opacity: .5; }
+
+  .timer-btn.running { border-color: var(--accent); background: var(--card-2); }
+  .timer-btn.running .readout,
+  .timer-btn.running .badge { color: var(--accent); }
+
+  .timer-btn.paused { border-color: var(--amber); background: var(--card-2); }
+  .timer-btn.paused .readout,
+  .timer-btn.paused .badge { color: var(--amber); }
+
+  .timer-btn.expired { animation: blink .55s steps(1, end) infinite; }
+  @keyframes blink {
+    0%, 100% { background: var(--red); border-color: var(--red); color: #fff; }
+    50%      { background: var(--card); border-color: var(--red); color: var(--red); }
+  }
+
+  /* FAB impostazioni */
+  .fab {
+    position: fixed;
+    right: calc(16px + env(safe-area-inset-right));
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: 1.5px solid var(--border);
+    background: var(--card-2);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .4);
+    z-index: 40;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .fab:active { transform: scale(.94); }
+  .fab svg { width: 26px; height: 26px; }
+
+  /* Overlay + modali */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, .62);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 60;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  .overlay.open { display: flex; }
+  .overlay input {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+  }
+  .modal {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    width: 100%;
+    max-width: 360px;
+    padding: 20px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, .5);
+  }
+  .modal h2 { margin: 0 0 14px; font-size: 1.05rem; font-weight: 700; }
+
+  .swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 16px; }
+  .swatch {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 50%;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+  }
+  .swatch.selected { outline-color: #fff; }
+
+  .custom-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: .9rem;
+    color: var(--muted);
+    margin-bottom: 18px;
+  }
+  .custom-row input[type="color"] {
+    width: 46px; height: 34px; padding: 0;
+    border: 1px solid var(--border); border-radius: 8px; background: none; cursor: pointer;
+  }
+
+  .field-row { display: flex; gap: 12px; margin-bottom: 18px; }
+  .field { flex: 1; }
+  .field label { display: block; font-size: .75rem; color: var(--muted); margin-bottom: 6px; }
+  .field input[type="number"] {
+    width: 100%;
+    font-size: 1.4rem;
+    text-align: center;
+    padding: 12px 8px;
+    border-radius: 12px;
+    border: 1.5px solid var(--border);
+    background: var(--card-2);
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  .field input::-webkit-outer-spin-button,
+  .field input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+  .modal-actions { display: flex; gap: 10px; }
+  .btn {
+    flex: 1;
+    padding: 13px;
+    border-radius: 12px;
+    border: 1.5px solid var(--border);
+    background: var(--card-2);
+    color: var(--text);
+    font-family: inherit;
+    font-size: .95rem;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn.primary { background: var(--accent-default); border-color: var(--accent-default); color: #06210f; }
+  .btn:active { transform: scale(.98); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .timer-btn.expired { animation-duration: 1.1s; }
+    .timer-btn:active, .fab:active, .btn:active { transform: none; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Timer</h1>
+    <p>Tocca per avviare · pausa/riprendi · doppio tocco per azzerare · tieni premuto per il colore</p>
+  </header>
+
+  <main class="grid" id="grid" aria-label="Pulsanti timer"></main>
+
+  <button class="fab" id="settingsFab" type="button" aria-label="Impostazioni">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="3"></circle>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+    </svg>
+  </button>
+
+  <!-- Modale colore -->
+  <div class="overlay" id="colorOverlay" role="dialog" aria-modal="true" aria-labelledby="colorTitle">
+    <div class="modal">
+      <h2 id="colorTitle">Colore pulsante</h2>
+      <div class="swatches" id="swatches"></div>
+      <label class="custom-row">
+        Personalizzato
+        <input type="color" id="customColor" aria-label="Colore personalizzato">
+      </label>
+      <div class="modal-actions">
+        <button class="btn" type="button" id="colorClose">Chiudi</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modale impostazioni -->
+  <div class="overlay" id="settingsOverlay" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="modal">
+      <h2 id="settingsTitle">Durata timer</h2>
+      <div class="field-row">
+        <div class="field">
+          <label for="minInput">Minuti</label>
+          <input type="number" id="minInput" inputmode="numeric" min="0" max="999" step="1">
+        </div>
+        <div class="field">
+          <label for="secInput">Secondi</label>
+          <input type="number" id="secInput" inputmode="numeric" min="0" max="59" step="1">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" type="button" id="settingsCancel">Annulla</button>
+        <button class="btn primary" type="button" id="settingsSave">Salva</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    "use strict";
+
+    /* ---------- Costanti ---------- */
+    var DEFAULT_DURATION_MS = 10 * 60 * 1000;
+    var LONG_PRESS_MS = 500;
+    var DOUBLE_TAP_MS = 260;
+    var ALARM_MS      = 20000;
+    var TICK_MS       = 200;
+    var MOVE_TOL      = 14;
+    var COUNT         = 10;
+    var DEFAULT_ACCENT = "#22c55e";
+    var PRESETS = ["#22c55e", "#10b981", "#06b6d4", "#3b82f6", "#6366f1", "#a855f7",
+                   "#ec4899", "#ef4444", "#f59e0b", "#eab308", "#84cc16", "#94a3b8"];
+    var LS_DURATION = "saltapp.durationMs";
+    var LS_ACCENTS  = "saltapp.accents";
+
+    /* ---------- Storage (con guardie) ---------- */
+    function lsGet(key) { try { return window.localStorage.getItem(key); } catch (e) { return null; } }
+    function lsSet(key, val) { try { window.localStorage.setItem(key, val); } catch (e) {} }
+
+    var DURATION_MS = (function () {
+      var v = parseInt(lsGet(LS_DURATION), 10);
+      return (isFinite(v) && v >= 1000) ? v : DEFAULT_DURATION_MS;
+    })();
+
+    var accents = (function () {
+      var out = [];
+      var i;
+      try {
+        var saved = JSON.parse(lsGet(LS_ACCENTS) || "[]");
+        for (i = 0; i < COUNT; i++) out[i] = (typeof saved[i] === "string") ? saved[i] : DEFAULT_ACCENT;
+      } catch (e) {
+        for (i = 0; i < COUNT; i++) out[i] = DEFAULT_ACCENT;
+      }
+      return out;
+    })();
+
+    function saveAccents() { lsSet(LS_ACCENTS, JSON.stringify(accents)); }
+
+    /* ---------- DOM ---------- */
+    var grid = document.getElementById("grid");
+    var buttons = [];
+
+    /* ---------- Audio ---------- */
+    var audioCtx = null;
+    function unlockAudio() {
+      try {
+        if (!audioCtx) {
+          var AC = window.AudioContext || window.webkitAudioContext;
+          if (!AC) return;
+          audioCtx = new AC();
+        }
+        if (audioCtx.state === "suspended") audioCtx.resume();
+      } catch (e) {}
+    }
+    function beep(freq, startTime, dur) {
+      if (!audioCtx) return;
+      var osc = audioCtx.createOscillator();
+      var gain = audioCtx.createGain();
+      osc.type = "square";
+      osc.frequency.value = freq;
+      var vol = 0.35;
+      gain.gain.setValueAtTime(0.0001, startTime);
+      gain.gain.exponentialRampToValueAtTime(vol, startTime + 0.012);
+      gain.gain.setValueAtTime(vol, startTime + dur - 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + dur);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(startTime);
+      osc.stop(startTime + dur + 0.02);
+    }
+    function playBeepPattern() {
+      if (!audioCtx) return;
+      if (audioCtx.state === "suspended") { try { audioCtx.resume(); } catch (e) {} }
+      var t = audioCtx.currentTime + 0.02;
+      beep(1046, t, 0.13);
+      beep(1046, t + 0.2, 0.13);
+    }
+
+    /* ---------- Allarme ---------- */
+    var ringing = new Set();
+    var beepInterval = null;
+    var beepStopTimer = null;
+    function startAlarm(s) {
+      ringing.add(s);
+      vibrate([250, 120, 250]);
+      if (!beepInterval) { playBeepPattern(); beepInterval = setInterval(playBeepPattern, 650); }
+      if (beepStopTimer) clearTimeout(beepStopTimer);
+      beepStopTimer = setTimeout(stopBeeping, ALARM_MS);
+    }
+    function stopBeeping() {
+      if (beepInterval) { clearInterval(beepInterval); beepInterval = null; }
+      if (beepStopTimer) { clearTimeout(beepStopTimer); beepStopTimer = null; }
+    }
+    function clearAlarmForButton(s) {
+      if (ringing.has(s)) { ringing.delete(s); if (ringing.size === 0) stopBeeping(); }
+    }
+
+    /* ---------- Wake Lock ---------- */
+    var wakeLock = null;
+    function anyActive() {
+      if (ringing.size > 0) return true;
+      for (var i = 0; i < buttons.length; i++) if (buttons[i].status === "running") return true;
+      return false;
+    }
+    function requestWakeLock() {
+      try {
+        if ("wakeLock" in navigator && !wakeLock && anyActive()) {
+          navigator.wakeLock.request("screen").then(function (wl) {
+            wakeLock = wl;
+            wakeLock.addEventListener("release", function () { wakeLock = null; });
+          }).catch(function () {});
+        }
+      } catch (e) {}
+    }
+    function maybeReleaseWakeLock() {
+      if (wakeLock && !anyActive()) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
+    }
+
+    /* ---------- Utilità ---------- */
+    function vibrate(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
+    function fmt(ms) {
+      var total = Math.max(0, Math.ceil(ms / 1000));
+      var m = Math.floor(total / 60), sec = total % 60;
+      return (m < 10 ? "0" + m : m) + ":" + (sec < 10 ? "0" + sec : sec);
+    }
+    var BADGE = { idle: "", running: "IN CORSO", paused: "PAUSA", expired: "FINITO" };
+    var A11Y  = { idle: "pronto", running: "in corso", paused: "in pausa", expired: "tempo scaduto" };
+
+    /* ---------- Tick ---------- */
+    var tickHandle = null;
+    function ensureTicking() { if (tickHandle == null) tickHandle = setInterval(tick, TICK_MS); }
+    function tick() {
+      var t = Date.now(), anyRunning = false;
+      for (var i = 0; i < buttons.length; i++) {
+        var s = buttons[i];
+        if (s.status !== "running") continue;
+        var rem = s.endTime - t;
+        if (rem <= 0) { expire(s); }
+        else { s.remainingMs = rem; updateReadout(s); anyRunning = true; }
+      }
+      if (!anyRunning && tickHandle != null) { clearInterval(tickHandle); tickHandle = null; }
+    }
+
+    /* ---------- Transizioni ---------- */
+    function start(s) {
+      s.remainingMs = DURATION_MS;
+      s.endTime = Date.now() + s.remainingMs;
+      s.status = "running";
+      render(s); ensureTicking(); requestWakeLock(); vibrate(15);
+    }
+    function pause(s) {
+      s.remainingMs = Math.max(0, s.endTime - Date.now());
+      s.endTime = null; s.status = "paused";
+      render(s); maybeReleaseWakeLock(); vibrate(15);
+    }
+    function resume(s) {
+      s.endTime = Date.now() + s.remainingMs; s.status = "running";
+      render(s); ensureTicking(); requestWakeLock(); vibrate(15);
+    }
+    function expire(s) {
+      s.status = "expired"; s.remainingMs = 0; s.endTime = null;
+      render(s); startAlarm(s); requestWakeLock();
+    }
+    function reset(s) {
+      s.status = "idle"; s.remainingMs = DURATION_MS; s.endTime = null;
+      clearAlarmForButton(s); render(s); maybeReleaseWakeLock();
+    }
+
+    function doSingleTap(s) {
+      switch (s.status) {
+        case "idle":    start(s);  break;
+        case "running": pause(s);  break;
+        case "paused":  resume(s); break;
+        case "expired": reset(s);  break;
+      }
+    }
+    function handleTap(s) {
+      if (s.pendingTapTimer != null) {          // secondo tocco -> doppio tap = azzera
+        clearTimeout(s.pendingTapTimer);
+        s.pendingTapTimer = null;
+        vibrate(20);
+        reset(s);
+      } else {                                  // primo tocco -> attendi eventuale secondo
+        s.pendingTapTimer = setTimeout(function () {
+          s.pendingTapTimer = null;
+          doSingleTap(s);
+        }, DOUBLE_TAP_MS);
+      }
+    }
+
+    /* ---------- Render ---------- */
+    function updateReadout(s) {
+      s.readoutEl.textContent = fmt(s.status === "idle" ? DURATION_MS : s.remainingMs);
+    }
+    function render(s) {
+      var el = s.el;
+      el.classList.remove("idle", "running", "paused", "expired");
+      el.classList.add(s.status);
+      s.badgeEl.textContent = BADGE[s.status];
+      updateReadout(s);
+      el.setAttribute("aria-label", "Pulsante " + s.n + ", " + A11Y[s.status]);
+    }
+    function applyAccent(s, color) {
+      s.accent = color;
+      accents[s.n - 1] = color;
+      s.el.style.setProperty("--accent", color);
+    }
+
+    /* ---------- Input ---------- */
+    function bindEvents(s) {
+      var el = s.el;
+      el.addEventListener("pointerdown", function (e) {
+        if (!e.isPrimary || (e.pointerType === "mouse" && e.button !== 0)) return;
+        if (s.pointerId != null) return;
+        s.lastPointerTs = Date.now();
+        s.pointerId = e.pointerId;
+        s.pointerDown = true; s.moved = false; s.longPressed = false;
+        s.downX = e.clientX; s.downY = e.clientY;
+        try { el.setPointerCapture(e.pointerId); } catch (err) {}
+        unlockAudio();
+        s.longTimer = setTimeout(function () {
+          s.longPressed = true;
+          if (s.pendingTapTimer != null) { clearTimeout(s.pendingTapTimer); s.pendingTapTimer = null; }
+          vibrate(35);
+          openColorModal(s);
+        }, LONG_PRESS_MS);
+      });
+      el.addEventListener("pointermove", function (e) {
+        if (!s.pointerDown || e.pointerId !== s.pointerId) return;
+        var dx = e.clientX - s.downX, dy = e.clientY - s.downY;
+        if (dx * dx + dy * dy > MOVE_TOL * MOVE_TOL) {
+          s.moved = true;
+          if (s.longTimer) { clearTimeout(s.longTimer); s.longTimer = null; }
+        }
+      });
+      function endPointer(e, isUp) {
+        if (e.pointerId !== s.pointerId) return;
+        if (s.longTimer) { clearTimeout(s.longTimer); s.longTimer = null; }
+        s.lastPointerTs = Date.now();
+        s.pointerDown = false; s.pointerId = null;
+        if (isUp && !s.longPressed && !s.moved) handleTap(s);
+        s.longPressed = false; s.moved = false;
+      }
+      el.addEventListener("pointerup", function (e) { endPointer(e, true); });
+      el.addEventListener("pointercancel", function (e) { endPointer(e, false); });
+      el.addEventListener("lostpointercapture", function (e) { if (e.pointerId === s.pointerId) endPointer(e, false); });
+      el.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+
+      // Attivazione da tastiera / screen reader: VoiceOver, TalkBack, Invio/Spazio
+      // sintetizzano un "click" senza eventi pointer. Il click "compat" che segue
+      // un vero gesto touch/mouse è già gestito dal percorso pointer: lo ignoriamo.
+      el.addEventListener("click", function () {
+        if (Date.now() - s.lastPointerTs < 700) return;
+        doSingleTap(s);
+      });
+      el.addEventListener("keydown", function (e) {
+        if (e.key === "Backspace" || e.key === "Delete") { e.preventDefault(); reset(s); }
+        else if (e.key === "c" || e.key === "C") { e.preventDefault(); openColorModal(s); }
+      });
+    }
+
+    /* ---------- Costruzione pulsanti ---------- */
+    function makeButton(n) {
+      var el = document.createElement("button");
+      el.type = "button";
+      el.className = "timer-btn idle";
+      el.style.setProperty("--accent", accents[n - 1] || DEFAULT_ACCENT);
+
+      var dot = document.createElement("span"); dot.className = "dot";
+      var num = document.createElement("span"); num.className = "num"; num.textContent = n;
+      var readout = document.createElement("span"); readout.className = "readout"; readout.textContent = fmt(DURATION_MS);
+      var badge = document.createElement("span"); badge.className = "badge";
+
+      el.appendChild(dot); el.appendChild(num); el.appendChild(readout); el.appendChild(badge);
+      grid.appendChild(el);
+
+      var s = {
+        n: n, el: el, readoutEl: readout, badgeEl: badge,
+        accent: accents[n - 1] || DEFAULT_ACCENT,
+        status: "idle", remainingMs: DURATION_MS, endTime: null,
+        longTimer: null, pendingTapTimer: null, longPressed: false,
+        pointerDown: false, pointerId: null, moved: false, downX: 0, downY: 0,
+        lastPointerTs: 0
+      };
+      buttons.push(s);
+      bindEvents(s);
+      render(s);
+    }
+    for (var i = 1; i <= COUNT; i++) makeButton(i);
+
+    /* ---------- Modale colore ---------- */
+    var colorOverlay = document.getElementById("colorOverlay");
+    var colorTitle = document.getElementById("colorTitle");
+    var swatchesEl = document.getElementById("swatches");
+    var customColor = document.getElementById("customColor");
+    var currentColorBtn = null;
+
+    (function buildSwatches() {
+      PRESETS.forEach(function (c) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "swatch";
+        b.style.background = c;
+        b.setAttribute("aria-label", "Colore " + c);
+        b.dataset.color = c;
+        b.addEventListener("click", function () { chooseColor(c); });
+        swatchesEl.appendChild(b);
+      });
+    })();
+
+    function markSelectedSwatch(color) {
+      var nodes = swatchesEl.querySelectorAll(".swatch");
+      for (var k = 0; k < nodes.length; k++) {
+        nodes[k].classList.toggle("selected", nodes[k].dataset.color.toLowerCase() === String(color).toLowerCase());
+      }
+    }
+    function chooseColor(color) {
+      if (!currentColorBtn) return;
+      applyAccent(currentColorBtn, color);
+      saveAccents();
+      markSelectedSwatch(color);
+      customColor.value = normalizeHex(color);
+    }
+    function normalizeHex(c) {
+      // <input type=color> vuole #rrggbb; se non lo è, ripiega sul default
+      return /^#[0-9a-fA-F]{6}$/.test(c) ? c : DEFAULT_ACCENT;
+    }
+    function openColorModal(s) {
+      currentColorBtn = s;
+      colorTitle.textContent = "Colore pulsante " + s.n;
+      markSelectedSwatch(s.accent);
+      customColor.value = normalizeHex(s.accent);
+      openOverlay(colorOverlay);
+    }
+    customColor.addEventListener("input", function () { chooseColor(customColor.value); });
+    document.getElementById("colorClose").addEventListener("click", function () { closeOverlay(colorOverlay); });
+
+    /* ---------- Modale impostazioni ---------- */
+    var settingsOverlay = document.getElementById("settingsOverlay");
+    var minInput = document.getElementById("minInput");
+    var secInput = document.getElementById("secInput");
+
+    function openSettings() {
+      var total = Math.round(DURATION_MS / 1000);
+      minInput.value = Math.floor(total / 60);
+      secInput.value = total % 60;
+      openOverlay(settingsOverlay);
+    }
+    function saveSettings() {
+      var m = parseInt(minInput.value, 10); if (!isFinite(m) || m < 0) m = 0;
+      var sec = parseInt(secInput.value, 10); if (!isFinite(sec) || sec < 0) sec = 0;
+      if (sec > 59) sec = 59;
+      var totalSec = m * 60 + sec;
+      if (totalSec < 1) totalSec = 1;              // almeno 1 secondo
+      DURATION_MS = totalSec * 1000;
+      lsSet(LS_DURATION, String(DURATION_MS));
+      // aggiorna la durata mostrata dai pulsanti fermi (idle)
+      for (var k = 0; k < buttons.length; k++) if (buttons[k].status === "idle") updateReadout(buttons[k]);
+      closeOverlay(settingsOverlay);
+    }
+    document.getElementById("settingsFab").addEventListener("click", openSettings);
+    document.getElementById("settingsSave").addEventListener("click", saveSettings);
+    document.getElementById("settingsCancel").addEventListener("click", function () { closeOverlay(settingsOverlay); });
+
+    /* ---------- Overlay helpers ---------- */
+    function openOverlay(ov) {
+      unlockAudio();
+      ov.classList.add("open");
+      document.body.classList.add("modal-open");
+    }
+    function closeOverlay(ov) {
+      ov.classList.remove("open");
+      if (!document.querySelector(".overlay.open")) document.body.classList.remove("modal-open");
+    }
+    [colorOverlay, settingsOverlay].forEach(function (ov) {
+      ov.addEventListener("click", function (e) { if (e.target === ov) closeOverlay(ov); }); // click sullo sfondo
+      ov.addEventListener("contextmenu", function (e) { e.preventDefault(); });               // niente menù contestuale sul popup
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") { closeOverlay(colorOverlay); closeOverlay(settingsOverlay); }
+    });
+
+    /* ---------- Ritorno in primo piano ---------- */
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState !== "visible") return;
+      var running = false;
+      for (var k = 0; k < buttons.length; k++) if (buttons[k].status === "running") { running = true; break; }
+      if (running) ensureTicking();
+      tick();
+      if (audioCtx && audioCtx.state === "suspended") { try { audioCtx.resume(); } catch (e) {} }
+      requestWakeLock();
+    });
+  })();
+  </script>
+</body>
+</html>
